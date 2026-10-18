@@ -57,7 +57,8 @@ def status_of(resp: DataMindResponse) -> tuple[str, str, str]:
     if resp.status == Status.CLARIFY:
         return "warn", "help", "Needs clarification"
     if resp.status == Status.UNSUPPORTED:
-        if resp.action_intent is not None and resp.action_intent.intent == ActionIntent.MODIFY_DATA:
+        intent = getattr(resp, "action_intent", None)  # absent on responses created before the intent check existed
+        if intent is not None and intent.intent == ActionIntent.MODIFY_DATA:
             return "warn", "shield", "Change refused — DataMind is read-only"
         return "warn", "ban", "Unable to answer from this dataset"
     if resp.error_category == ErrorCategory.QUERY_VALIDATION.value:

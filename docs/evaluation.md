@@ -37,11 +37,11 @@ Latest full run (2026-10-18, TPC-H SF1, live Snowflake + `gemma4:e4b`):
 
 | Metric | Result |
 |---|---|
-| Cases passed | **38 / 38** |
-| Answers matching independent ground truth | **28 / 28** |
+| Cases passed | **37 / 38** (Q06 dropped its year grouping; it passed 3/3 on re-runs) |
+| Answers matching independent ground truth | **27 / 28** |
 | Snowflake queries executed (each with a query ID) | 31 |
-| Median latency per question | 17.2 s |
-| Gemma outputs that needed one repair | 1 (Q31) |
+| Median latency per question | 22.9 s (includes the action-intent check) |
+| Gemma outputs that needed one repair | 3 (Q08, Q34, Q36) |
 | Explanations withheld by the grounding check | 1 (Q19: the explanation cited a number not in the result, so the deterministic summary was shown; the answer itself matched ground truth) |
 
 Limits of this evidence: all 38 cases use one dataset (TPC-H SF1) and were written by the team, so they are a

@@ -35,9 +35,10 @@ STAGES = ("interpret", "validate", "query", "verify")
 
 # Intents answered without planning or running any query.
 _NO_QUERY_INTENTS = (ActionIntent.MODIFY_DATA, ActionIntent.AMBIGUOUS, ActionIntent.UNSUPPORTED)
-HYPOTHETICAL_HINT = ("This is a hypothetical what-if. Compute it with a read-only query from the current stored values "
-                     "(use intent 'advanced_sql' if the scenario needs arithmetic the plan format cannot express). "
-                     "Never change data.")
+HYPOTHETICAL_HINT = ("This is a hypothetical what-if. Compute it with a read-only query from the current stored values; "
+                     "never change data. If the scenario's answer is an existing value or total (e.g. 'what would A be "
+                     "if it matched B' is B's value), plan that normally; use intent 'advanced_sql' only when the "
+                     "scenario needs arithmetic the plan format cannot express.")
 
 
 class Status(str, Enum):
@@ -327,11 +328,12 @@ def apply_tie_probe(result, probe: tuple[int, str] | None) -> str | None:
 
 def history_entry(resp: DataMindResponse) -> dict[str, str] | None:
     if resp.plan is None:
-        if resp.action_intent is None or resp.status not in (Status.CLARIFY, Status.UNSUPPORTED):
+        intent = getattr(resp, "action_intent", None)  # absent on responses created before the intent check existed
+        if intent is None or resp.status not in (Status.CLARIFY, Status.UNSUPPORTED):
             return None
         # Answered by the intent check: keep the exchange so a reply to the clarification, or a follow-up to a
         # refusal, is interpreted in context.
-        return {"question": resp.question, "plan": f"(no query; {resp.action_intent.intent.value}: {resp.answer[:300]})"}
+        return {"question": resp.question, "plan": f"(no query; {intent.intent.value}: {resp.answer[:300]})"}
     return {"question": resp.question, "plan": plan_summary(resp.plan)}
 
 

@@ -118,6 +118,7 @@ Rules:
 - Use only the tables and columns listed. Fully qualify tables as {db}.{schema}.TABLE and give each an alias.
 - SELECT only; never INSERT, UPDATE, DELETE, MERGE, CREATE, DROP, ALTER, CALL, USE or SET.
 - Include a LIMIT of at most {max_rows}.
+- Text values in filters must be copied exactly (same case and spelling) from the "values: [...]" lists shown.
 - Give every computed column a readable snake_case alias.
 - "Top/highest X within each group": aggregate per (group, X), then keep one row per group with
   QUALIFY ROW_NUMBER() OVER (PARTITION BY group ORDER BY metric DESC) = 1.

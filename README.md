@@ -8,8 +8,8 @@ returned rows, the filters, joins and calculations, and every assumption that wa
 question and explains the result; deterministic code builds the SQL, guards it and checks the facts.
 
 > **Verified status (2026-10-18):** live Snowflake + live Gemma 4 (`gemma4:e4b`). Evaluation against independently
-> written ground-truth SQL: **38/38 cases pass, 28/28 answers match ground truth** — see [docs/evaluation_results.md](docs/evaluation_results.md).
-> 103 offline unit tests pass. What is *not* verified yet is listed under [Verification status](#verification-status).
+> written ground-truth SQL: **37/38 cases pass, 27/28 answers match ground truth** (Q06 dropped its year grouping in that run; it passed 3/3 on re-runs) — see [docs/evaluation_results.md](docs/evaluation_results.md).
+> 139 offline unit tests pass. What is *not* verified yet is listed under [Verification status](#verification-status).
 
 ## Problem
 
@@ -251,7 +251,8 @@ enabled. Gemma runs locally and has no per-token cost.
   possible hostile SQL string.
 
 ## Known limitations
-* **Speed:** a local model takes about 15–35 s per question (median 17.2 s in the evaluation), longer if a
+* **Intent check:** a Gemma classification, not a guarantee. It adds about 5 s per question, can mislabel unseen phrasings, and sends borderline "should be the same as" statements to a refusal rather than a clarification. Writes are prevented by the SQL guard and the read-only role regardless of the label.
+* **Speed:** a local model takes about 15–35 s per question (median 22.9 s in the evaluation, including the intent check), longer if a
   re-plan is needed. The first question also loads the model.
 * **Small-model errors:** the model sometimes drops a grouping column or a filter. A deterministic sanity check
   catches the common cases and re-plans once.
@@ -266,10 +267,12 @@ enabled. Gemma runs locally and has no per-token cost.
 ## Verification status
 | What | Status |
 |---|---|
-| Offline unit tests (`pytest -m "not live"`) | **103 passed** |
-| Live evaluation, TPC-H SF1, live Snowflake + `gemma4:e4b` | **38/38 cases pass, 28/28 answers match ground truth**; every answered case has a Snowflake query ID ([results](docs/evaluation_results.md), [method](docs/evaluation.md)) |
+| Offline unit tests (`pytest -m "not live"`) | **139 passed** |
+| Live evaluation, TPC-H SF1, live Snowflake + `gemma4:e4b` | **37/38 cases pass, 27/28 answers match ground truth** (Q06 dropped its year grouping once; passed 3/3 on re-runs); every answered case has a Snowflake query ID ([results](docs/evaluation_results.md), [method](docs/evaluation.md)) |
 | Second dataset (OWID CO₂) live | **Not yet verified** — the data has not been loaded into Snowflake |
 | "Answer changes when data changes" demo | **Not yet verified** — needs the `DATAMIND_DEMO.TPCH` copy from the setup script |
+| Action-intent check, 73-case regression set (`scripts/run_intent_eval.py`) | **72/73 acceptable**; missed modifications **0/32**; false refusals **1/31** ("How many orders were deleted?" labelled unsupported); end-to-end on 4 what-if cases: 0 mutations executed ([results](docs/intent_evaluation_results.md), [end-to-end](docs/intent_evaluation_e2e_results.md)) |
+| Multi-step what-if questions (advanced path) | **Weak** — e.g. "Assuming France had Germany's customer count, how many customers would Europe have?" returned NULL from model-written SQL |
 | Hosted Gemma (`google_ai_studio`) | Implemented, **not verified** |
 
 ## Main technical contribution
