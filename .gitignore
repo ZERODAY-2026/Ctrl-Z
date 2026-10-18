@@ -1,5 +1,4 @@
 .env
-.env.example
 .secrets/
 *.p8
 *.pem

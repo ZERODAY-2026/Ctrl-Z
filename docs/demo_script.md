@@ -20,5 +20,5 @@ Warm Gemma up with one question so the model is loaded.
    ask again: KENYA now leads, with a new query ID. Run STEP B to revert.
 7. **Second dataset by config (30 s).** Restart with `DATAMIND_DATASET_CONFIG=datasets/owid_co2.toml` and ask
    "Which 10 countries emitted the most CO2 in 2022?" No code changed.
-8. **Limits (15 s).** Small local model: 20–60 s per question; advanced (model-written) SQL is validated for safety,
+8. **Limits (15 s).** Small local model: about 15–35 s per question (median 17 s in the evaluation); advanced (model-written) SQL is validated for safety,
    not proven correct, and is labelled as such.

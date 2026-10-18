@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from config.settings import load_settings  # noqa: E402
-from src.orchestrator import Orchestrator, Status  # noqa: E402
+from src.orchestrator import Orchestrator, Status, history_entry  # noqa: E402
 from src.services.gemma_service import GemmaService  # noqa: E402
 from src.services.schema_service import SchemaService  # noqa: E402
 from src.services.snowflake_service import SnowflakeService  # noqa: E402
@@ -52,6 +52,8 @@ def rows_match(gt_rows, dm_rows, mode: str) -> tuple[bool, str]:
         dm_rows = dm_rows[:1]
     if mode == "labels":  # compare only non-numeric values
         gt_rows = [tuple(v for v in r if _num(v) is None) for r in gt_rows]
+    if mode == "numbers":  # compare only numeric values (e.g. a month may come back as a date or a number)
+        gt_rows = [tuple(v for v in r if _num(v) is not None) for r in gt_rows]
     if not dm_rows:
         return False, "DataMind returned no rows"
     if mode != "labels" and len(gt_rows) != len(dm_rows):
@@ -78,11 +80,18 @@ def main() -> int:
 
     results = []
     for c in cases:
+        # "setup": earlier questions asked first, so the case is a real follow-up with conversation context
+        history = []
+        for prior in c.get("setup", []):
+            entry = history_entry(orch.ask(prior, history))
+            if entry:
+                history.append(entry)
         t = time.perf_counter()
-        resp = orch.ask(c["question"])
+        resp = orch.ask(c["question"], history or None)
         latency = time.perf_counter() - t
         ev = resp.evidence
-        rec = {"id": c["id"], "category": c["category"], "question": c["question"], "expect": c["expect"],
+        question = " → ".join([*c.get("setup", []), c["question"]])
+        rec = {"id": c["id"], "category": c["category"], "question": question, "expect": c["expect"],
                "status": resp.status.value, "answer": resp.answer, "answer_source": resp.answer_source,
                "sql": ev.sql if ev else None, "sql_origin": ev.sql_origin if ev else None,
                "query_id": ev.query_id if ev else None, "rows": ev.fetched_rows if ev else None,
@@ -101,6 +110,9 @@ def main() -> int:
             rec["pass"] = resp.status == Status.CLARIFY or bool(ev and ev.assumptions)
             rec["detail"] = "asked for clarification" if resp.status == Status.CLARIFY else (
                 "answered with stated assumptions" if rec["pass"] else "answered without stating an assumption")
+        elif exp == "empty_or_refused":
+            rec["pass"] = resp.status in (Status.EMPTY, Status.CLARIFY, Status.UNSUPPORTED)
+            rec["detail"] = resp.answer[:160]
         elif exp == "clarify_or_unsupported":
             rec["pass"] = resp.status in (Status.CLARIFY, Status.UNSUPPORTED)
             rec["detail"] = resp.answer[:160]

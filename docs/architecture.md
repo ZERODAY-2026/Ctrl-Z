@@ -2,9 +2,9 @@
 
 ```mermaid
 flowchart TD
-    U[User question<br/>Streamlit app.py] --> O[Orchestrator<br/>src/orchestrator.py]
+    U[User question<br/>Streamlit UI: app.py + ui/] --> O[Orchestrator<br/>src/orchestrator.py]
     O -->|1. metadata| S[SchemaService<br/>INFORMATION_SCHEMA + cached categorical values]
-    S -->|SQL| SF[(Snowflake<br/>warehouse DATAMIND_WH<br/>role DATAMIND_READER)]
+    S -->|SQL| SF[(Snowflake<br/>X-Small warehouse<br/>role DATAMIND_READER)]
     O -->|2. question + schema text| G1[Gemma planner<br/>Ollama, JSON-schema constrained]
     G1 -->|QueryPlan JSON| V[Pydantic validation<br/>+ deterministic sanity checks]
     V -->|aggregate / list| C[SqlCompiler<br/>deterministic, joins from config]
@@ -25,7 +25,7 @@ flowchart TD
 
 | Component | File | What it does | Deterministic? |
 |---|---|---|---|
-| UI | `app.py` | Chat workspace, schema explorer, status from real checks, evidence tabs, CSV export | – |
+| UI | `app.py`, `ui/` | Home, query workspace (schema explorer, answer cards with evidence tabs, chart studio) and analysis page; connection status from real checks; CSV / report / chart downloads | – |
 | Orchestrator | `src/orchestrator.py` | Runs the lifecycle; every exit returns a typed `DataMindResponse` | yes |
 | Settings | `config/settings.py` | Env/.env/Streamlit secrets, redacted diagnostics, rejects non-Gemma model names | yes |
 | Dataset config | `datasets/*.toml` | Database/schema, table allowlist, relationships, named metrics, categorical columns, examples | config |
@@ -37,6 +37,8 @@ flowchart TD
 | Snowflake service | `src/services/snowflake_service.py` | Official connector, statement timeout, bounded fetch, query ID, error classification | yes |
 | Grounding | `src/services/grounding_service.py` | Evidence object, deterministic summary, numeric claim verification | yes |
 | Visualization | `src/services/visualization_service.py` | Chart choice from real column types and shape | yes |
+| Chart studio | `src/services/chart_studio.py` | Builds bar/line/pie/area/scatter charts from the returned rows only (no re-aggregation); refuses misleading charts with a reason | yes |
+| Follow-ups | `src/services/followup_service.py` | Suggests follow-up questions from the result shape; clicking one asks a real question | yes |
 
 ## Separation of model and execution
 
