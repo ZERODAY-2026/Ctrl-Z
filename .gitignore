@@ -12,3 +12,5 @@ venv/
 eval/results/
 *.log
 ZeroDay_OSS_Hacktoberfest_2026_Participant_Guide.pdf
+LICENSE
+frontend/

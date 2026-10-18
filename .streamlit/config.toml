@@ -1,0 +1,24 @@
+# DataMind theme: midnight-slate data lab. Detailed styling lives in ui/theme.py.
+[theme]
+base = "dark"
+primaryColor = "#2DD4BF"
+backgroundColor = "#0B0F14"
+secondaryBackgroundColor = "#111821"
+textColor = "#F4F7FB"
+linkColor = "#5EEAD4"
+borderColor = "#283442"
+showWidgetBorder = true
+baseRadius = "10px"
+baseFontSize = 17
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+
+[theme.sidebar]
+backgroundColor = "#0E141B"
+secondaryBackgroundColor = "#161F2B"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

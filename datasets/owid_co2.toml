@@ -1,0 +1,34 @@
+# Second dataset: Our World in Data CO2 emissions (loaded by scripts/load_owid_co2.py).
+# Switching to it needs only:  DATAMIND_DATASET_CONFIG=datasets/owid_co2.toml
+
+name = "Our World in Data — CO2 emissions"
+database = "DATAMIND_DEMO"
+schema = "OWID"
+description = """Annual CO2 and greenhouse-gas emissions by country, 1750 onwards. One row per (COUNTRY, YEAR).
+CO2 values are in million tonnes; *_PER_CAPITA in tonnes per person; GDP in international-$ (2011 prices).
+IMPORTANT: COUNTRY also contains aggregates such as 'World', 'Asia', 'High-income countries'; those rows have
+ISO_CODE NULL. To rank real countries, filter ISO_CODE is_not_null. Many early years have missing (NULL) values."""
+license = """Our World in Data, CO2 and Greenhouse Gas Emissions dataset (github.com/owid/co2-data), CC BY 4.0.
+Credit: Our World in Data. Some underlying series are produced by third parties (e.g. Global Carbon Project)
+under their own terms. Downloaded at setup time; not stored in this repository."""
+
+tables = ["CO2"]
+
+categorical_columns = []
+
+example_questions = [
+  "Which 10 countries emitted the most CO2 in 2022?",
+  "How have India's CO2 emissions changed since 2000?",
+  "What was the world's CO2 per capita in 2020?",
+  "Which countries had the highest coal CO2 in 2015?",
+]
+
+[table_descriptions]
+CO2 = "Country-year emissions panel (countries and regional aggregates)."
+
+[column_descriptions]
+"CO2.CO2" = "Annual production-based CO2 emissions, million tonnes"
+"CO2.CO2_PER_CAPITA" = "Tonnes of CO2 per person"
+"CO2.SHARE_GLOBAL_CO2" = "Percent of global CO2 emissions in that year"
+"CO2.ISO_CODE" = "3-letter country code; NULL for aggregates like World or continents"
+"CO2.GDP" = "Gross domestic product, international-$ at 2011 prices"

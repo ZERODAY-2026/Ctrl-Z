@@ -78,6 +78,8 @@ class DatasetConfig:
     relationships: list[tuple[str, str]]  # (many_side "T.C", one_side "T.C")
     metrics: dict[str, dict[str, str]]
     categorical_columns: list[str]
+    column_labels: dict[str, str]  # result column -> display name for charts, e.g. C_NAME -> Customer
+    label_keys: dict[str, str]  # display label column -> stable key column, e.g. CUSTOMER.C_NAME -> CUSTOMER.C_CUSTKEY
     example_questions: list[str]
     path: str
 
@@ -103,6 +105,8 @@ class DatasetConfig:
                 relationships=[(r["many"].upper(), r["one"].upper()) for r in raw.get("relationships", [])],
                 metrics={k.lower(): v for k, v in raw.get("metrics", {}).items()},
                 categorical_columns=[c.upper() for c in raw.get("categorical_columns", [])],
+                label_keys={k.upper(): v.upper() for k, v in raw.get("label_keys", {}).items()},
+                column_labels={k.upper(): v for k, v in raw.get("column_labels", {}).items()},
                 example_questions=raw.get("example_questions", []),
                 path=str(p),
             )

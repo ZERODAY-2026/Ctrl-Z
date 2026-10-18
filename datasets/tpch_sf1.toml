@@ -14,6 +14,24 @@ use inside your Snowflake account only; the data is not copied into this reposit
 # Allowlist. Only these tables are visible to Gemma and the SQL guard.
 tables = ["REGION", "NATION", "CUSTOMER", "ORDERS", "LINEITEM", "PART", "SUPPLIER", "PARTSUPP"]
 
+# Low-cardinality text columns: distinct values are fetched once so Gemma uses real filter values.
+categorical_columns = [
+  "REGION.R_NAME", "NATION.N_NAME", "CUSTOMER.C_MKTSEGMENT", "ORDERS.O_ORDERSTATUS",
+  "ORDERS.O_ORDERPRIORITY", "LINEITEM.L_RETURNFLAG", "LINEITEM.L_LINESTATUS",
+  "LINEITEM.L_SHIPMODE", "LINEITEM.L_SHIPINSTRUCT", "PART.P_MFGR", "PART.P_BRAND",
+]
+
+example_questions = [
+  "How many customers are there in each market segment?",
+  "What are the top 5 nations by total revenue?",
+  "How did monthly order count change during 1996?",
+  "Which region had the highest revenue in 1995?",
+  "What is the average order value by order priority?",
+  "Which ship mode has the largest share of revenue?",
+  "Show the 10 largest orders placed by customers in the BUILDING segment",
+  "Which suppliers in GERMANY have the highest account balance?",
+]
+
 [table_descriptions]
 REGION = "5 world regions."
 NATION = "25 nations; each belongs to a region. Used by BOTH customers (C_NATIONKEY) and suppliers (S_NATIONKEY)."
@@ -82,20 +100,19 @@ description = "Number of distinct customers"
 expression = "SUM(LINEITEM.L_QUANTITY)"
 description = "Units sold (sum of line item quantity)"
 
-# Low-cardinality text columns: distinct values are fetched once so Gemma uses real filter values.
-categorical_columns = [
-  "REGION.R_NAME", "NATION.N_NAME", "CUSTOMER.C_MKTSEGMENT", "ORDERS.O_ORDERSTATUS",
-  "ORDERS.O_ORDERPRIORITY", "LINEITEM.L_RETURNFLAG", "LINEITEM.L_LINESTATUS",
-  "LINEITEM.L_SHIPMODE", "LINEITEM.L_SHIPINSTRUCT", "PART.P_MFGR", "PART.P_BRAND",
-]
+# Display label -> stable key. When grouping by a label, DataMind also groups by (and returns) the key,
+# so equal names never merge and tied ranks are broken by the key.
+[label_keys]
+"CUSTOMER.C_NAME" = "CUSTOMER.C_CUSTKEY"
+"SUPPLIER.S_NAME" = "SUPPLIER.S_SUPPKEY"
+"PART.P_NAME" = "PART.P_PARTKEY"
 
-example_questions = [
-  "How many customers are there in each market segment?",
-  "What are the top 5 nations by total revenue?",
-  "How did monthly order count change during 1996?",
-  "Which region had the highest revenue in 1995?",
-  "What is the average order value by order priority?",
-  "Which ship mode has the largest share of revenue?",
-  "Show the 10 largest orders placed by customers in the BUILDING segment",
-  "Which suppliers in GERMANY have the highest account balance?",
-]
+# Display names for chart axes (result column -> label). Optional.
+[column_labels]
+C_NAME = "Customer"
+S_NAME = "Supplier"
+P_NAME = "Part"
+N_NAME = "Nation"
+R_NAME = "Region"
+P_BRAND = "Brand"
+O_ORDERSTATUS = "Order status"
