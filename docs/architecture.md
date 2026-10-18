@@ -1,5 +1,34 @@
 # DataMind architecture
 
+## Trust boundaries
+
+Everything the model produces is treated as untrusted input. Only deterministic code talks to Snowflake.
+
+```mermaid
+flowchart LR
+    subgraph UNTRUSTED["Untrusted"]
+        Q[User question]
+        G["Gemma output<br/>plan · SQL · explanation"]
+        DV[Database values]
+    end
+    subgraph TRUSTED["Deterministic code"]
+        V["Pydantic + sanity checks"]
+        C["Compiler<br/>joins and metrics from config"]
+        SG["SQL guard<br/>checked twice"]
+        GR["Grounding check"]
+    end
+    subgraph DB["Snowflake"]
+        R["Role DATAMIND_READER<br/>USAGE + SELECT only"]
+    end
+    Q --> G --> V --> C --> SG --> R
+    G -. advanced SQL .-> SG
+    R --> DV --> GR
+    G -. explanation .-> GR
+    GR --> A[Answer shown with SQL, query ID, rows]
+```
+
+## Pipeline
+
 ```mermaid
 flowchart TD
     U[User question<br/>Streamlit UI: app.py + ui/] --> O[Orchestrator<br/>src/orchestrator.py]
@@ -9,6 +38,7 @@ flowchart TD
     G1 -->|QueryPlan JSON| V[Pydantic validation<br/>+ deterministic sanity checks]
     V -->|aggregate / list| C[SqlCompiler<br/>deterministic, joins from config]
     V -->|advanced_sql| G2[Gemma SQL drafter]
+    V -.->|sanity check failed: re-plan once| G1
     V -->|clarify / unsupported| R
     C --> GU[SQL guard<br/>sqlglot parse, read-only,<br/>allowlist, LIMIT]
     G2 --> GU

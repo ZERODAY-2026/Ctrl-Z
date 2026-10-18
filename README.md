@@ -46,23 +46,98 @@ When the data cannot answer a question, it says so instead of guessing.
 
 ## Architecture
 
+Gemma *plans and explains*; deterministic code *builds, guards and checks*. The model never connects to Snowflake.
+
 ```mermaid
 flowchart LR
-    Q[Question] --> P[Gemma planner<br/>JSON plan]
-    P --> V[Validate + sanity checks]
-    V --> C[Deterministic SQL compiler]
-    V -.advanced.-> GS[Gemma SQL]
-    C --> G[SQL guard]
-    GS --> G
-    G --> SF[(Snowflake)]
-    SF --> E[Evidence: rows, query ID]
-    E --> X[Gemma explanation]
-    X --> K{numbers grounded?}
-    K -- yes --> A[Answer + evidence + chart]
-    K -- no --> D[Deterministic summary] --> A
+    subgraph UI["Streamlit UI · app.py + ui/"]
+        H[Home]
+        W["Workspace<br/>schema explorer · answer cards<br/>evidence tabs · follow-ups"]
+        AN["Analysis page<br/>chart studio · downloads"]
+    end
+
+    subgraph CORE["DataMind core · src/"]
+        O[Orchestrator]
+        SS[Schema service]
+        GM[Gemma service]
+        QP["Query plan<br/>Pydantic schema"]
+        SC["SQL compiler<br/>sqlglot AST"]
+        SG["SQL guard<br/>parser-based, fail-closed"]
+        SX[Snowflake service]
+        GR["Grounding<br/>number check"]
+        VZ["Charts<br/>visualization + chart studio"]
+    end
+
+    subgraph EXT["External"]
+        OL["Ollama · Gemma 4 E4B<br/>local GPU"]
+        SF[("Snowflake<br/>read-only role")]
+    end
+
+    DS[/"datasets/*.toml<br/>tables · joins · metrics"/] --> SS & SC
+
+    H --> W
+    W <--> O
+    W --> AN
+    O --> SS --> SX
+    O --> GM <--> OL
+    GM --> QP --> SC --> SG
+    GM -. advanced SQL .-> SG
+    SG --> SX <--> SF
+    SX --> GR --> O
+    O --> VZ --> W
 ```
 
+One question, end to end:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant UI as Streamlit UI
+    participant O as Orchestrator
+    participant G as Gemma (Ollama)
+    participant C as Compiler + SQL guard
+    participant S as Snowflake
+
+    U->>UI: "Top 5 nations by revenue in 1995?"
+    UI->>O: ask(question, last 3 plans)
+    O->>S: schema metadata (cached 15 min)
+    O->>G: question + schema + allowed values
+    G-->>O: JSON query plan
+    O->>O: Pydantic validation + sanity checks (re-plan once if needed)
+    O->>C: compile plan to SQL
+    C-->>O: guarded, read-only SELECT with LIMIT
+    O->>S: execute (guard re-checked, statement timeout)
+    S-->>O: rows + query ID
+    O->>G: question + at most 30 result rows
+    G-->>O: explanation
+    O->>O: every number in the explanation must appear in the rows
+    O-->>UI: answer + SQL + query ID + rows + assumptions + chart
+    UI-->>U: verified answer card
+```
+
+For questions the plan format cannot express, Gemma writes SQL directly (the *advanced* path). That SQL goes through the same
+guard and is labelled *model-written*. If the explanation contains a number that is not in the rows, a deterministic
+summary is shown instead and the rejected numbers are listed.
+
 Details, component responsibilities and the security layers: [docs/architecture.md](docs/architecture.md).
+
+### Project structure
+
+```text
+app.py                 Streamlit entry point and page router
+ui/                    pages (home, workspace, analysis), answer cards, chart studio UI, theme
+src/orchestrator.py    question lifecycle: plan -> compile -> guard -> execute -> ground
+src/services/          schema, Gemma, SQL compiler, Snowflake, grounding, charts, follow-ups
+src/security/          SQL guard
+src/schemas/           Pydantic query-plan schema
+config/settings.py     .env / Streamlit secrets loading, redacted diagnostics
+datasets/              per-dataset TOML configs (TPC-H SF1, OWID CO2)
+scripts/               Snowflake setup, key generation, connection check, evaluation, data loaders
+eval/questions.json    38 evaluation cases with independent ground-truth SQL
+tests/                 offline unit tests and live (Snowflake + Gemma) tests
+docs/                  architecture, evaluation method and results, demo script
+```
 
 | Layer | Technology |
 |---|---|
@@ -96,7 +171,8 @@ cp .env.example .env                                 # then edit .env
    ACCOUNTADMIN. It creates the X-Small auto-suspending warehouse `DATAMIND_WH`, the read-only role `DATAMIND_READER`,
    the service user `DATAMIND_APP`, and a writable demo copy `DATAMIND_DEMO.TPCH`. The script is safe to re-run.
 4. In `.env`, set `SNOWFLAKE_ACCOUNT` (Snowsight → account menu → *Account identifier*), `SNOWFLAKE_USER=DATAMIND_APP`
-   and `SNOWFLAKE_PRIVATE_KEY_FILE=.secrets/datamind_rsa_key.p8`.
+   and `SNOWFLAKE_PRIVATE_KEY_FILE=.secrets/datamind_rsa_key.p8`. To use an existing warehouse instead of
+   `DATAMIND_WH`, set `SNOWFLAKE_WAREHOUSE` (tested with `COMPUTE_WH`) and grant the role `USAGE` on it.
 
    *Quick alternative:* use your own login with `SNOWFLAKE_PASSWORD`, or `SNOWFLAKE_AUTHENTICATOR=externalbrowser`
    if your account enforces MFA. Your default role is used unless you set `SNOWFLAKE_ROLE`. That works, but you lose
