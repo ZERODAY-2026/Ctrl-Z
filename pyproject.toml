@@ -1,0 +1,12 @@
+[project]
+name = "datamind"
+version = "0.1.0"
+description = "DataMind — Ask. Query. Verify. Natural-language analytics over Snowflake with Google Gemma."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: hits real Snowflake and Gemma; skipped when not configured"]
+filterwarnings = ["ignore::DeprecationWarning"]

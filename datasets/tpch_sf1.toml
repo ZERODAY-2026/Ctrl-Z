@@ -1,0 +1,101 @@
+# DataMind dataset configuration: Snowflake sample TPC-H, scale factor 1.
+# Everything dataset-specific lives in a file like this one; switching datasets
+# means pointing DATAMIND_DATASET_CONFIG at another file, not editing code.
+
+name = "TPC-H sample (SF1)"
+database = "SNOWFLAKE_SAMPLE_DATA"
+schema = "TPCH_SF1"
+description = """Synthetic wholesale-supplier benchmark data (TPC-H): customers place orders made of line items;
+parts are sold by suppliers; customers and suppliers belong to nations, which belong to regions.
+Dates span 1992-1998. Money columns are in an unspecified currency unit."""
+license = """Shared by Snowflake into every account as SNOWFLAKE_SAMPLE_DATA. No open licence is stated:
+use inside your Snowflake account only; the data is not copied into this repository. TPC-H is a TPC benchmark (tpc.org)."""
+
+# Allowlist. Only these tables are visible to Gemma and the SQL guard.
+tables = ["REGION", "NATION", "CUSTOMER", "ORDERS", "LINEITEM", "PART", "SUPPLIER", "PARTSUPP"]
+
+[table_descriptions]
+REGION = "5 world regions."
+NATION = "25 nations; each belongs to a region. Used by BOTH customers (C_NATIONKEY) and suppliers (S_NATIONKEY)."
+CUSTOMER = "Customers with market segment and account balance."
+ORDERS = "One row per order: customer, status, total price, order date (1992-1998), priority."
+LINEITEM = "One row per order line: part, supplier, quantity, price, discount, tax, ship/commit/receipt dates, ship mode. Sales revenue lives here."
+PART = "Parts catalogue: name, manufacturer, brand, type, size, container, retail price."
+SUPPLIER = "Suppliers with nation and account balance."
+PARTSUPP = "Which supplier offers which part, with available quantity and supply cost."
+
+[column_descriptions]
+"ORDERS.O_ORDERSTATUS" = "F = fulfilled, O = open, P = partially fulfilled"
+"ORDERS.O_TOTALPRICE" = "Total price of the order including tax and discount"
+"LINEITEM.L_EXTENDEDPRICE" = "Quantity x part price, before discount"
+"LINEITEM.L_DISCOUNT" = "Fractional discount, 0.00-0.10"
+"LINEITEM.L_TAX" = "Fractional tax rate"
+"LINEITEM.L_RETURNFLAG" = "R = returned, A = accepted, N = none"
+"LINEITEM.L_LINESTATUS" = "O = open, F = filled"
+"CUSTOMER.C_MKTSEGMENT" = "Market segment of the customer"
+"CUSTOMER.C_ACCTBAL" = "Customer account balance"
+"SUPPLIER.S_ACCTBAL" = "Supplier account balance"
+
+# Many-to-one join paths (many side -> one side).
+[[relationships]]
+many = "NATION.N_REGIONKEY"
+one = "REGION.R_REGIONKEY"
+[[relationships]]
+many = "CUSTOMER.C_NATIONKEY"
+one = "NATION.N_NATIONKEY"
+[[relationships]]
+many = "SUPPLIER.S_NATIONKEY"
+one = "NATION.N_NATIONKEY"
+[[relationships]]
+many = "ORDERS.O_CUSTKEY"
+one = "CUSTOMER.C_CUSTKEY"
+[[relationships]]
+many = "LINEITEM.L_ORDERKEY"
+one = "ORDERS.O_ORDERKEY"
+[[relationships]]
+many = "LINEITEM.L_PARTKEY"
+one = "PART.P_PARTKEY"
+[[relationships]]
+many = "LINEITEM.L_SUPPKEY"
+one = "SUPPLIER.S_SUPPKEY"
+[[relationships]]
+many = "PARTSUPP.PS_PARTKEY"
+one = "PART.P_PARTKEY"
+[[relationships]]
+many = "PARTSUPP.PS_SUPPKEY"
+one = "SUPPLIER.S_SUPPKEY"
+
+# Named business metrics. Gemma picks a metric by name; the expression is fixed here.
+[metrics.revenue]
+expression = "SUM(LINEITEM.L_EXTENDEDPRICE * (1 - LINEITEM.L_DISCOUNT))"
+description = "Net sales revenue: extended price after discount, summed over line items"
+[metrics.gross_sales]
+expression = "SUM(LINEITEM.L_EXTENDEDPRICE)"
+description = "Sales before discount"
+[metrics.order_count]
+expression = "COUNT(DISTINCT ORDERS.O_ORDERKEY)"
+description = "Number of distinct orders"
+[metrics.customer_count]
+expression = "COUNT(DISTINCT CUSTOMER.C_CUSTKEY)"
+description = "Number of distinct customers"
+[metrics.quantity_sold]
+expression = "SUM(LINEITEM.L_QUANTITY)"
+description = "Units sold (sum of line item quantity)"
+
+# Low-cardinality text columns: distinct values are fetched once so Gemma uses real filter values.
+categorical_columns = [
+  "REGION.R_NAME", "NATION.N_NAME", "CUSTOMER.C_MKTSEGMENT", "ORDERS.O_ORDERSTATUS",
+  "ORDERS.O_ORDERPRIORITY", "LINEITEM.L_RETURNFLAG", "LINEITEM.L_LINESTATUS",
+  "LINEITEM.L_SHIPMODE", "LINEITEM.L_SHIPINSTRUCT", "PART.P_MFGR", "PART.P_BRAND",
+]
+
+example_questions = [
+  "How many customers are there in each market segment?",
+  "What are the top 5 nations by total revenue?",
+  "How did monthly order count change during 1996?",
+  "Which region had the highest revenue in 1995?",
+  "What is the average order value by order priority?",
+  "Which ship mode has the largest share of revenue?",
+  "Show the 10 largest orders placed by customers in the BUILDING segment",
+  "Which suppliers in GERMANY have the highest account balance?",
+]
