@@ -54,6 +54,21 @@ def test_union_is_wrapped_with_limit(tpch_snapshot):
     "SHOW TABLES",
     f"COPY INTO @stage FROM {DB}.ORDERS",
     "TRUNCATE TABLE x",
+    f"WITH d AS (DELETE FROM {DB}.ORDERS) SELECT * FROM d",
+    f"WITH x AS (SELECT 1 AS a) INSERT INTO {DB}.ORDERS SELECT * FROM x",
+    f"SELECT * INTO copy_of_orders FROM {DB}.ORDERS",
+    f"EXECUTE IMMEDIATE 'DELETE FROM {DB}.ORDERS'",
+    f"BEGIN DELETE FROM {DB}.ORDERS; END",
+    f"EXPLAIN DELETE FROM {DB}.ORDERS",
+    f"INSERT OVERWRITE INTO {DB}.ORDERS SELECT * FROM {DB}.ORDERS",
+    f"CREATE OR REPLACE VIEW v AS SELECT * FROM {DB}.ORDERS",
+    f"CREATE TABLE {DB}.ORDERS2 CLONE {DB}.ORDERS",
+    f"ALTER TABLE {DB}.ORDERS DROP COLUMN O_COMMENT",
+    "UNDROP TABLE ORDERS",
+    "PUT file:///tmp/x @~",
+    "REMOVE @~/x",
+    "COMMIT",
+    "SET x = 1",
 ])
 def test_non_select_rejected(sql, tpch_snapshot):
     with pytest.raises(QueryValidationError):
@@ -113,3 +128,8 @@ def test_garbage_fails_closed(tpch_snapshot):
 def test_select_without_table_rejected(tpch_snapshot):
     with pytest.raises(QueryValidationError):
         ok("SELECT 1", tpch_snapshot)
+
+
+def test_comments_are_not_executed(tpch_snapshot):
+    r = ok(f"SELECT O_ORDERKEY FROM {DB}.ORDERS -- ; DELETE FROM {DB}.ORDERS", tpch_snapshot)
+    assert "DELETE" not in r.sql.upper() and "--" not in r.sql and "/*" not in r.sql

@@ -32,6 +32,9 @@ flowchart LR
 ```mermaid
 flowchart TD
     U[User question<br/>Streamlit UI: app.py + ui/] --> O[Orchestrator<br/>src/orchestrator.py]
+    O -->|0. action intent| GI[Gemma intent check<br/>READ / HYPOTHETICAL / MODIFY / AMBIGUOUS / UNSUPPORTED]
+    GI -->|MODIFY_DATA: refuse, no query<br/>AMBIGUOUS: ask<br/>UNSUPPORTED: explain| R
+    GI -->|READ_ANALYSIS, HYPOTHETICAL,<br/>or check failed| O
     O -->|1. metadata| S[SchemaService<br/>INFORMATION_SCHEMA + cached categorical values]
     S -->|SQL| SF[(Snowflake<br/>X-Small warehouse<br/>role DATAMIND_READER)]
     O -->|2. question + schema text| G1[Gemma planner<br/>Ollama, JSON-schema constrained]
@@ -89,7 +92,13 @@ assumption ("NATION was linked through CUSTOMER; it could also relate to SUPPLIE
 
 1. Snowflake role `DATAMIND_READER`: `USAGE` + `SELECT` only (scripts/snowflake_setup.sql).
 2. Statement timeout (`STATEMENT_TIMEOUT_IN_SECONDS`) per session, warehouse auto-suspend 60 s.
-3. SQL guard (parser-based, fail-closed), applied again immediately before execution.
+3. SQL guard (parser-based, fail-closed), applied again immediately before execution. `SnowflakeService.run_validated`
+   independently re-parses every statement and refuses anything but a single read-only SELECT
+   (`sql_guard.assert_read_only`), so no caller can execute a write even if it skipped the full guard. Comments are
+   stripped from the executed SQL.
 4. Bounded `fetchmany(max_rows + 1)` to detect truncation.
 5. Prompts contain metadata, configured categorical values and (for explanation) at most 30 result rows. No
    credentials or environment variables are ever sent to the model.
+6. The Gemma action-intent check (`src/schemas/intent.py`) refuses change requests before any SQL exists. It is a
+   usability layer only: a misclassification can at worst send a request on to the planner, whose SQL still passes
+   layers 1 and 3. Regression set: `eval/intent_cases.json`, run with `scripts/run_intent_eval.py`.

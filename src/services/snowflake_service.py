@@ -18,6 +18,7 @@ from snowflake.connector import errors as sf_errors
 from snowflake.connector.constants import FIELD_ID_TO_NAME
 
 from config.settings import SnowflakeSettings
+from src.security import sql_guard
 from src.utils.errors import ErrorCategory, SnowflakeError
 
 log = logging.getLogger(__name__)
@@ -171,7 +172,8 @@ class SnowflakeService:
         raise SnowflakeError("Could not reach Snowflake.", "retry exhausted", ErrorCategory.SNOWFLAKE_CONNECTION)
 
     def run_validated(self, sql: str) -> QueryResult:
-        """Execute SQL that has already passed `sql_guard.validate` (caller's responsibility)."""
+        """Execute SQL that has already passed `sql_guard.validate`. A schema-free read-only check runs here too."""
+        sql_guard.assert_read_only(sql)
         return self._execute(sql)
 
     def run_metadata(self, sql: str, params: Any = None, max_rows: int = 10000) -> QueryResult:

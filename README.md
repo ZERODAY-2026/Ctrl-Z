@@ -28,11 +28,19 @@ When the data cannot answer a question, it says so instead of guessing.
   SQL directly. That SQL goes through the same guard and is labelled *model-written* in the UI.
 * **SQL guard:** a parser-based (sqlglot), fail-closed check. It allows one read-only SELECT over allowlisted tables
   and known columns, blocks system and table functions, and enforces a row limit. It runs again immediately before
-  execution, on top of a read-only Snowflake role.
+  execution, and the Snowflake service itself re-checks that every statement is a single read-only SELECT, on top of
+  a read-only Snowflake role.
 * **Live Snowflake execution:** the official connector, a statement timeout, bounded fetching with truncation
   detection, and the query ID of every executed statement.
 * **Grounded answers:** Gemma's explanation is shown only if every number in it appears in the returned rows or query
   metadata. Otherwise a deterministic summary is shown and the rejected numbers are listed.
+* **Action-intent check:** before planning, Gemma labels what the request wants done — `READ_ANALYSIS`,
+  `HYPOTHETICAL`, `MODIFY_DATA`, `AMBIGUOUS` or `UNSUPPORTED` — judged from the intended action, not keywords
+  ("how did revenue change" is analysis; "change India's revenue to match Iraq's" is a modification). Change requests
+  are refused with a read-only alternative and no query is generated; what-ifs are computed read-only and labelled
+  "no data was changed"; unclear requests get one clarification question. The label is validated by Pydantic, its
+  self-reported confidence is never used for decisions, and if the check fails the request continues on the normal
+  read-only path. This is a routing aid, **not** the security boundary (see SQL guard).
 * **Honest edge cases:** clarification questions (with the real filter values when a value doesn't exist),
   unsupported requests (missing data, writes, forecasts), "no matching rows" without overclaiming, NULL and truncation
   disclosure, tie disclosure at top-N cut-offs, and warnings when a join may double-count values (fan-out).
@@ -101,6 +109,8 @@ sequenceDiagram
 
     U->>UI: "Top 5 nations by revenue in 1995?"
     UI->>O: ask(question, last 3 plans)
+    O->>G: classify action intent
+    G-->>O: READ_ANALYSIS (MODIFY_DATA / AMBIGUOUS / UNSUPPORTED stop here, no query)
     O->>S: schema metadata (cached 15 min)
     O->>G: question + schema + allowed values
     G-->>O: JSON query plan

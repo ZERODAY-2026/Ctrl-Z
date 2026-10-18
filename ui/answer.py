@@ -12,6 +12,7 @@ import streamlit as st
 
 from config.settings import Settings
 from src.orchestrator import DataMindResponse, Orchestrator, Status
+from src.schemas.intent import ActionIntent
 from src.services import chart_studio as cs
 from src.services.followup_service import suggest
 from src.services.grounding_service import fmt_number
@@ -56,6 +57,8 @@ def status_of(resp: DataMindResponse) -> tuple[str, str, str]:
     if resp.status == Status.CLARIFY:
         return "warn", "help", "Needs clarification"
     if resp.status == Status.UNSUPPORTED:
+        if resp.action_intent is not None and resp.action_intent.intent == ActionIntent.MODIFY_DATA:
+            return "warn", "shield", "Change refused — DataMind is read-only"
         return "warn", "ban", "Unable to answer from this dataset"
     if resp.error_category == ErrorCategory.QUERY_VALIDATION.value:
         return "bad", "shield", "Query refused by safety guard"

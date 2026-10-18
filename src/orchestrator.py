@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from config.settings import Settings
+from src.schemas.intent import ActionIntent, IntentClassification
 from src.schemas.query_plan import Intent, QueryPlan
 from src.security import sql_guard
 from src.services.gemma_service import GemmaCall, GemmaService, plan_summary
@@ -31,6 +32,12 @@ MAX_QUESTION_CHARS = 500
 
 # Pipeline stages reported to an optional progress callback, in order, as each one actually starts.
 STAGES = ("interpret", "validate", "query", "verify")
+
+# Intents answered without planning or running any query.
+_NO_QUERY_INTENTS = (ActionIntent.MODIFY_DATA, ActionIntent.AMBIGUOUS, ActionIntent.UNSUPPORTED)
+HYPOTHETICAL_HINT = ("This is a hypothetical what-if. Compute it with a read-only query from the current stored values "
+                     "(use intent 'advanced_sql' if the scenario needs arithmetic the plan format cannot express). "
+                     "Never change data.")
 
 
 class Status(str, Enum):
@@ -54,6 +61,7 @@ class DataMindResponse:
     timings_ms: dict[str, int] = field(default_factory=dict)
     gemma_calls: list[GemmaCall] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    action_intent: IntentClassification | None = None  # None when the intent check did not run or failed
 
 
 class Orchestrator:
@@ -73,20 +81,51 @@ class Orchestrator:
         if len(q) < MIN_QUESTION_CHARS or len(q) > MAX_QUESTION_CHARS:
             return DataMindResponse(q, Status.ERROR, f"Please ask a question between {MIN_QUESTION_CHARS} and "
                                     f"{MAX_QUESTION_CHARS} characters long.", "system", error_category=ErrorCategory.INPUT.value)
+        stage("interpret")
+        intent, intent_note = self._classify(q, history, timings)
+        if intent is not None and intent.intent in _NO_QUERY_INTENTS:
+            resp = self._done(q, *intent_response(intent), "gemma", None, timings)
+        else:
+            hypothetical = intent is not None and intent.intent == ActionIntent.HYPOTHETICAL
+            resp = self._answer(q, history, stage, timings, HYPOTHETICAL_HINT if hypothetical else None)
+            if hypothetical and resp.evidence is not None:
+                resp.notes.insert(0, "Hypothetical scenario: computed from the current stored values with a read-only "
+                                     "query. No data was changed.")
+        if intent_note:
+            resp.notes.append(intent_note)
+        resp.action_intent = intent
+        return resp
+
+    def _classify(self, q, history, timings) -> tuple[IntentClassification | None, str | None]:
+        """Gemma's action-intent label. On failure, continue on the normal path: it is read-only by construction."""
+        t = time.perf_counter()
+        try:
+            intent = self.gemma.classify_intent(q, self.settings.dataset.description, history)
+        except DataMindError as exc:
+            log.warning("Intent classification failed (%s); continuing on the read-only path", exc.diagnostic[:200])
+            return None, ("The request-intent check was unavailable, so the question went straight to the read-only "
+                          "query pipeline (the SQL guard still blocks any change to data).")
+        finally:
+            timings["gemma_intent"] = _ms(t)
+        log.info("Intent %s (self-reported confidence %.2f): %s", intent.intent.value, intent.confidence, intent.reason)
+        return intent, None
+
+    def _answer(self, q, history, stage, timings, hint: str | None) -> DataMindResponse:
+        """The analytical pipeline. `hint` is added to the model's copy of the question only."""
+        model_q = f"{q}\n[{hint}]" if hint else q
         plan: QueryPlan | None = None
         try:
-            stage("interpret")
             t = time.perf_counter()
             snap = self.schema.get()
             context = self.schema.prompt_context(snap, q)
             timings["schema"] = _ms(t)
 
             t = time.perf_counter()
-            plan = self.gemma.plan(q, context, history)
+            plan = self.gemma.plan(model_q, context, history)
             problem = plan_sanity_problem(q, plan)
             if problem:
                 log.info("Plan sanity check failed (%s); re-planning once", problem)
-                plan = self.gemma.plan(q, context, history, feedback=problem)
+                plan = self.gemma.plan(model_q, context, history, feedback=problem)
             timings["gemma_plan"] = _ms(t)
 
             if plan.intent == Intent.CLARIFY:
@@ -99,9 +138,9 @@ class Orchestrator:
             stage("validate")
             t = time.perf_counter()
             if plan.intent == Intent.ADVANCED_SQL:
-                built = self._advanced(q, context, snap)
+                built = self._advanced(model_q, context, snap)
             else:
-                built = self._compile_with_repair(q, context, history, plan, snap, timings)
+                built = self._compile_with_repair(model_q, context, history, plan, snap, timings)
                 plan = built.pop("plan")
             timings["sql_build"] = _ms(t)
 
@@ -259,6 +298,19 @@ def plan_sanity_problem(question: str, plan: QueryPlan) -> str | None:
     return None
 
 
+def intent_response(intent: IntentClassification) -> tuple[Status, str]:
+    """Status and answer for an intent that is answered without running a query."""
+    if intent.intent == ActionIntent.MODIFY_DATA:
+        alternative = (intent.safe_alternative or "a read-only question about the current values").replace("*", "")
+        return Status.UNSUPPORTED, (
+            f"DataMind is read-only, so I can't make this change ({intent.requested_change}). No query was generated "
+            f"or run, and the stored data is unchanged.\n\nI can answer a read-only question instead, for example: "
+            f"*{alternative}*")
+    if intent.intent == ActionIntent.AMBIGUOUS:
+        return Status.CLARIFY, intent.clarification_question or "Could you clarify what you would like to do?"
+    return Status.UNSUPPORTED, f"I can't answer this from the available data: {intent.reason}"
+
+
 def apply_tie_probe(result, probe: tuple[int, str] | None) -> str | None:
     """Trim the extra probe row; return a disclosure if it ties with the last row shown."""
     if not probe or len(result.rows) <= probe[0]:
@@ -275,7 +327,11 @@ def apply_tie_probe(result, probe: tuple[int, str] | None) -> str | None:
 
 def history_entry(resp: DataMindResponse) -> dict[str, str] | None:
     if resp.plan is None:
-        return None
+        if resp.action_intent is None or resp.status not in (Status.CLARIFY, Status.UNSUPPORTED):
+            return None
+        # Answered by the intent check: keep the exchange so a reply to the clarification, or a follow-up to a
+        # refusal, is interpreted in context.
+        return {"question": resp.question, "plan": f"(no query; {resp.action_intent.intent.value}: {resp.answer[:300]})"}
     return {"question": resp.question, "plan": plan_summary(resp.plan)}
 
 

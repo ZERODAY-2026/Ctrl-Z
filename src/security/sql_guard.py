@@ -12,13 +12,16 @@ that every possible hostile SQL string is harmless.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
-from src.services.schema_service import SchemaSnapshot
 from src.utils.errors import QueryValidationError
+
+if TYPE_CHECKING:  # annotation only; avoids an import cycle with snowflake_service
+    from src.services.schema_service import SchemaSnapshot
 
 MAX_SQL_CHARS = 20_000
 
@@ -60,8 +63,16 @@ def _ident_upper(identifier: exp.Expression | None) -> str:
     return str(identifier.name).upper()
 
 
-def validate(sql: str, snapshot: SchemaSnapshot, max_rows: int) -> GuardResult:
-    """Validate and normalise SQL. Returns the exact SQL to execute or raises QueryValidationError."""
+def assert_read_only(sql: str) -> None:
+    """Schema-free check used at the execution boundary: one parseable, read-only SELECT, nothing else.
+
+    Snowflake execution calls this for every statement, independently of `validate` and of any model output,
+    so a caller that forgot the full guard still cannot run a data-changing statement.
+    """
+    _read_only_tree(sql)
+
+
+def _read_only_tree(sql: str) -> exp.Expression:
     if not sql or not sql.strip():
         raise QueryValidationError("No SQL was produced for this question.", "empty sql")
     if len(sql) > MAX_SQL_CHARS:
@@ -85,6 +96,12 @@ def validate(sql: str, snapshot: SchemaSnapshot, max_rows: int) -> GuardResult:
             name = _func_name(node)
             if name in _FORBIDDEN_FUNCS or name.startswith("SYSTEM$") or name.startswith("SYSTEM_"):
                 raise QueryValidationError(f"The function {name} is not allowed.", f"forbidden func {name}")
+    return tree
+
+
+def validate(sql: str, snapshot: SchemaSnapshot, max_rows: int) -> GuardResult:
+    """Validate and normalise SQL. Returns the exact SQL to execute or raises QueryValidationError."""
+    tree = _read_only_tree(sql)
 
     # --- tables -----------------------------------------------------------------
     cte_names = {_ident_upper(c.args.get("alias").this) for c in tree.find_all(exp.CTE) if c.args.get("alias")}
@@ -153,5 +170,6 @@ def validate(sql: str, snapshot: SchemaSnapshot, max_rows: int) -> GuardResult:
     else:
         tree = exp.select("*").from_(tree.subquery("bounded")).limit(max_rows)
 
-    return GuardResult(sql=tree.sql(dialect="snowflake", pretty=True), tables=referenced,
+    # Comments are dropped so the executed text is exactly the validated statement.
+    return GuardResult(sql=tree.sql(dialect="snowflake", pretty=True, comments=False), tables=referenced,
                        columns=used_cols, limit=limit, notes=notes)
