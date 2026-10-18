@@ -52,6 +52,61 @@ When the data cannot answer a question, it says so instead of guessing.
 * **Re-run:** the exact SQL of any earlier answer can be re-run against current data to get a fresh query ID.
 * **Adapts by configuration:** a dataset is a TOML file in `datasets/`. TPC-H and Our World in Data CO₂ are included.
 
+## Demo walkthrough
+
+One question from the live app (TPC-H SF1, live Snowflake + `gemma4:e4b`): *"How many customers are there in each
+market segment?"*
+
+### 1. Live pipeline progress
+
+![Pipeline progress: interpreting with Gemma, validating, querying Snowflake, verifying](demo/01-live-pipeline-progress.png)
+
+Each step lights up when it actually starts, not on a timer: the orchestrator reports
+`interpret → validate → query → verify` to the UI as it reaches each one.
+
+* **Interpreting with Gemma:** Gemma first labels what the request wants done (analysis, what-if, change request,
+  unclear, unsupported). Change requests stop here and no query is generated. For analysis, Gemma then returns a JSON
+  query plan (tables, dimensions, measures, filters), checked against a JSON schema and Pydantic.
+* **Validating the plan and SQL:** the plan is checked against the discovered schema, then compiled to SQL by
+  deterministic code. The SQL guard parses it and allows only one read-only SELECT over allowlisted tables and columns.
+* **Querying Snowflake:** the statement runs through the official connector with a timeout and a row limit; the
+  Snowflake service re-checks that it is read-only before sending it.
+* **Verifying the result:** every number and label in Gemma's explanation is matched against the returned rows.
+
+### 2. Grounded answer, assumptions and automatic chart
+
+![Answer text with verification note, assumptions, bar chart and results table](demo/02-grounded-answer-and-chart.png)
+
+* **The answer is checked, not trusted.** The note *"Every number and label in it was checked against the returned
+  rows"* appears only when the check in `grounding_service.py` passed: each number in Gemma's text (30,189,
+  30,142, …) and each label (HOUSEHOLD, BUILDING, …) must appear in the result. If anything does not match, the app
+  shows a deterministic summary instead and lists the rejected claims.
+* **Assumptions are shown** in the expandable panel (two for this question). They come from Gemma's plan, for
+  example how a measure was counted, and are never hidden.
+* **The chart is picked from the shape of the result:** one text column plus one numeric column gives a bar chart; a
+  date or year column gives a line chart; a single row of numbers gives metric tiles. It is drawn only from the
+  returned rows, never re-aggregated, and the table below shows the same rows.
+
+### 3. How it was computed
+
+![Plain-English steps: table read, grouping, calculation, sort and limit](demo/03-how-it-was-computed.png)
+
+The compiler writes these steps while it builds the SQL, so they describe exactly what ran: the table read, the
+grouping column, the calculation (`COUNT(DISTINCT CUSTOMER.C_CUSTKEY)`), the sort, the tie-breaker it added so the
+order is stable (`c_mktsegment ascending`) and the row limit. **Report** exports the question, answer, assumptions,
+SQL and query details as Markdown; **Download CSV** exports the rows; **Re-run SQL** runs the same statement again
+against current data and gets a new query ID.
+
+### 4. The exact SQL that ran
+
+![Exact SQL executed in Snowflake, compiled deterministically from Gemma's validated plan](demo/04-exact-sql.png)
+
+This is the statement Snowflake executed, character for character. The label *"Compiled deterministically from
+Gemma's validated plan"* means Gemma did not write this SQL: it chose the plan, and the compiler turned it into
+SQL using configured join paths and metrics, adding the `LIMIT`. For questions the plan format cannot express, Gemma
+writes the SQL directly; it goes through the same guard and is labelled *model-written* here instead. The
+**Query details** tab shows the Snowflake query ID, row count and timings.
+
 ## Architecture
 
 Gemma *plans and explains*; deterministic code *builds, guards and checks*. The model never connects to Snowflake.
@@ -147,6 +202,7 @@ scripts/               Snowflake setup, key generation, connection check, evalua
 eval/questions.json    38 evaluation cases with independent ground-truth SQL
 tests/                 offline unit tests and live (Snowflake + Gemma) tests
 docs/                  architecture, evaluation method and results, demo script
+demo/                  screenshots of the live app used in the demo walkthrough
 ```
 
 | Layer | Technology |
